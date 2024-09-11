@@ -60,7 +60,6 @@ func init() {
 
 /*
 NewLogger
-
 By convention, many programs output their log messages to os.Stderr
 instead of os.Stdout for a couple of reasons:
 
@@ -126,6 +125,10 @@ Add customized processor functions
 */
 func AddProcessor(p Processor) {
 	defaultLogger.AddProcessor(p)
+}
+
+func ShowDetail(b bool) {
+	defaultLogger.showDetail = b
 }
 
 func (l *Logger) SetLevel(level Level) {
