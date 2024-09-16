@@ -52,77 +52,47 @@ type Logger struct {
 	buf          bytes.Buffer
 	w            io.Writer
 	processors   []Processor
+	logFile      *os.File    // Log file
+	logFileMutex sync.Mutex  // Mutex for file handling
+	logChannel   chan string // Channel for log entries
+	currentHour  string      // Current hour for log file naming
 }
 
 func init() {
 	defaultLogger = NewLogger()
+	go defaultLogger.startFileWriter() // Start the goroutine for log writing
 }
 
-/*
-NewLogger
-By convention, many programs output their log messages to os.Stderr
-instead of os.Stdout for a couple of reasons:
-
-1. Separation of Concerns: It allows for the separation of regular
-program output from error messages and log information.
-This can be very useful when you’re piping or redirecting output
-in the command line.
-2. Order of Messages: os.Stderr is unbuffered, while os.Stdout is buffered.
-This means that if your program crashes or exits unexpectedly, messages
-sent to os.Stdout might not get printed if the buffer isn’t flushed before the program exits.
-But messages sent to os.Stderr will always get printed immediately.
-*/
 func NewLogger() *Logger {
-	return &Logger{
+	logger := &Logger{
 		level:      LevelInfo,
 		w:          os.Stderr,
 		showDetail: false,
+		logChannel: make(chan string, 100), // Buffered channel to avoid blocking
 	}
+	return logger
 }
 
-/*
-SetLevel
-Enum of different levels:
-
-	Debug: 0
-	INFO:  1
-	ERROR: 2
-*/
 func SetLevel(level Level) {
 	defaultLogger.SetLevel(level)
 }
 
-/*
-GetLevel
-*/
 func GetLevel() Level {
 	return defaultLogger.GetLevel()
 }
 
-/*
-Info
-*/
 func Info(format string, v ...any) {
 	defaultLogger.Info(format, v...)
 }
 
-/*
-Debug
-*/
 func Debug(format string, v ...any) {
 	defaultLogger.Debug(format, v...)
 }
 
-/*
-Error
-*/
 func Error(format string, v ...any) {
 	defaultLogger.Error(format, v...)
 }
 
-/*
-Add customized processor functions
-*/
 func AddProcessor(p Processor) {
 	defaultLogger.AddProcessor(p)
 }
@@ -143,35 +113,35 @@ func (l *Logger) Info(format string, v ...any) {
 	if l.level > LevelInfo {
 		return
 	}
-	l.w.Write([]byte(l.assembleMsg(InfoLevel, format, v...)))
+	msg := l.assembleMsg(format, v...)
+	l.w.Write([]byte(InfoLevel + msg)) // Write to standard output
+	l.logChannel <- "[INFO]" + msg     // Send log to channel for file writing
 }
 
 func (l *Logger) Debug(format string, v ...any) {
 	if l.level > LevelDebug {
 		return
 	}
-	l.w.Write([]byte(l.assembleMsg(DebugLevel, format, v...)))
+	msg := l.assembleMsg(format, v...)
+	l.w.Write([]byte(DebugLevel + msg))
+	l.logChannel <- "[DEBUG]" + msg
 }
 
 func (l *Logger) Error(format string, v ...any) {
 	if l.level > LevelError {
 		return
 	}
-	l.w.Write([]byte(l.assembleMsg(ErrorLevel, format, v...)))
+	msg := l.assembleMsg(format, v...)
+	l.w.Write([]byte(ErrorLevel + msg))
+	l.logChannel <- "[ERROR]" + msg
 }
 
 func (l *Logger) AddProcessor(p Processor) {
 	l.processors = append(l.processors, p)
 }
 
-func (l *Logger) assembleMsg(logLevel string, format string, v ...any) string {
-
-	// https://golangnote.com/golang/golang-stringsbuilder-vs-bytesbuffer
-	// Both `strings.Builder` and `bytes.Buffer` are used for efficient in Golang.
-	// Here I choose strings.Builder
-
+func (l *Logger) assembleMsg(format string, v ...any) string {
 	var msg strings.Builder
-	msg.WriteString(logLevel)
 	msg.WriteString(Whitespace)
 
 	if l.showDetail {
@@ -201,4 +171,34 @@ func (l *Logger) getContent(format string, v ...any) string {
 		format, v = process(format, v...)
 	}
 	return fmt.Sprintf(format, v...)
+}
+
+func (l *Logger) startFileWriter() {
+	for msg := range l.logChannel {
+		l.writeToFile(msg)
+	}
+}
+
+func (l *Logger) writeToFile(msg string) {
+	l.logFileMutex.Lock()
+	defer l.logFileMutex.Unlock()
+
+	currentHour := time.Now().Format("2006-01-02_15")
+	if l.logFile == nil || l.currentHour != currentHour {
+		if l.logFile != nil {
+			l.logFile.Close()
+		}
+		filePath := fmt.Sprintf("log_%s.log", currentHour)
+		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
+		if err != nil {
+			fmt.Println("Error opening file:", err)
+			return
+		}
+		l.logFile = file
+		l.currentHour = currentHour
+	}
+
+	if l.logFile != nil {
+		l.logFile.WriteString(msg)
+	}
 }
