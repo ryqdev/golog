@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"testing"
+	"time"
 )
 
 // TestLoggerInitialization checks that the logger initializes with the default level and output.
@@ -82,4 +83,15 @@ func TestAddProcessor(t *testing.T) {
 	if buf.String() != expected {
 		t.Errorf("expected %q, got %q", expected, buf.String())
 	}
+}
+
+// Test with log file
+func TestWithLogFile(t *testing.T) {
+	SetLogFile("test.log")
+	SetLevel(LevelDebug)
+	ShowDetail(true)
+	Info("test info message")
+	Debug("test debug message")
+	Error("test error message")
+	time.Sleep(1 * time.Second)
 }

@@ -44,23 +44,23 @@ type Level int32
 type Processor func(format string, v ...any) (string, []any)
 
 type Logger struct {
-	level        Level
-	prefix       string
-	fileLocation string
-	showDetail   bool
-	mutex        sync.Mutex
-	buf          bytes.Buffer
-	w            io.Writer
-	processors   []Processor
-	logFile      *os.File    // Log file
-	logFileMutex sync.Mutex  // Mutex for file handling
-	logChannel   chan string // Channel for log entries
-	currentHour  string      // Current hour for log file naming
+	level          Level
+	prefix         string
+	fileLocation   string
+	showDetail     bool
+	mutex          sync.Mutex
+	buf            bytes.Buffer
+	w              io.Writer
+	processors     []Processor
+	writeLogToFile bool        // whether write log to file
+	logFile        *os.File    // Log file
+	logFileMutex   sync.Mutex  // Mutex for file handling
+	logChannel     chan string // Channel for log entries
+	currentHour    string      // Current hour for log file naming
 }
 
 func init() {
 	defaultLogger = NewLogger()
-	go defaultLogger.startFileWriter() // Start the goroutine for log writing
 }
 
 func NewLogger() *Logger {
@@ -101,6 +101,11 @@ func ShowDetail(b bool) {
 	defaultLogger.showDetail = b
 }
 
+func SetLogFile(path string) {
+	defaultLogger.writeLogToFile = true
+	go defaultLogger.startFileWriter() // Start the goroutine for log writing
+}
+
 func (l *Logger) SetLevel(level Level) {
 	atomic.StoreInt32((*int32)(&l.level), int32(level))
 }
@@ -115,7 +120,9 @@ func (l *Logger) Info(format string, v ...any) {
 	}
 	msg := l.assembleMsg(format, v...)
 	l.w.Write([]byte(InfoLevel + msg)) // Write to standard output
-	l.logChannel <- "[INFO]" + msg     // Send log to channel for file writing
+	if l.writeLogToFile {
+		l.logChannel <- "[INFO]" + msg // Send log to channel for file writing
+	}
 }
 
 func (l *Logger) Debug(format string, v ...any) {
@@ -124,7 +131,9 @@ func (l *Logger) Debug(format string, v ...any) {
 	}
 	msg := l.assembleMsg(format, v...)
 	l.w.Write([]byte(DebugLevel + msg))
-	l.logChannel <- "[DEBUG]" + msg
+	if l.writeLogToFile {
+		l.logChannel <- "[DEBUG]" + msg
+	}
 }
 
 func (l *Logger) Error(format string, v ...any) {
@@ -133,7 +142,9 @@ func (l *Logger) Error(format string, v ...any) {
 	}
 	msg := l.assembleMsg(format, v...)
 	l.w.Write([]byte(ErrorLevel + msg))
-	l.logChannel <- "[ERROR]" + msg
+	if l.writeLogToFile {
+		l.logChannel <- "[ERROR]" + msg
+	}
 }
 
 func (l *Logger) AddProcessor(p Processor) {
@@ -188,7 +199,13 @@ func (l *Logger) writeToFile(msg string) {
 		if l.logFile != nil {
 			l.logFile.Close()
 		}
-		filePath := fmt.Sprintf("log_%s.log", currentHour)
+
+		// write to log directory, if there doesn't exist, create it
+		if _, err := os.Stat("log"); os.IsNotExist(err) {
+			os.Mkdir("log", os.ModePerm)
+		}
+
+		filePath := fmt.Sprintf("log/%s.log", currentHour)
 		file, err := os.OpenFile(filePath, os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
 		if err != nil {
 			fmt.Println("Error opening file:", err)

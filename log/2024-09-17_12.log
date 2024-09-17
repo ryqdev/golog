@@ -1,0 +1,3 @@
+[INFO] 2024-09-17 12:44:31.370897 +0800 CST m=+0.000819001 golog_test.go:93 test info message 
+[DEBUG] 2024-09-17 12:44:31.37112 +0800 CST m=+0.001041209 golog_test.go:94 test debug message 
+[ERROR] 2024-09-17 12:44:31.371128 +0800 CST m=+0.001049459 golog_test.go:95 test error message 
